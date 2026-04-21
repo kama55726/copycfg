@@ -75,6 +75,8 @@
 
         .info-value {
             font-weight: 600;
+            font-family: monospace;
+            font-size: 14px;
         }
 
         .copy-btn {
@@ -205,6 +207,11 @@
             color: rgba(255, 255, 255, 0.4);
             font-size: 10px;
         }
+        
+        .countdown {
+            font-weight: 700;
+            color: #fbbf24;
+        }
     </style>
 </head>
 <body>
@@ -222,7 +229,7 @@
             </div>
             <div class="info-row">
                 <span class="info-label">⏰ Осталось:</span>
-                <span class="info-value" id="daysLeft">--</span>
+                <span class="info-value" id="daysLeft"><span class="countdown" id="countdown">--</span></span>
             </div>
             <div class="info-row">
                 <span class="info-label">🕐 Обновлено:</span>
@@ -281,25 +288,117 @@
         const configData = urlParams.get('data');
 
         let configsText = '';
-        let daysLeftValue = 0;
+        let expireTimestamp = 0;
+        let timerInterval = null;
+
+        // Форматирование времени
+        function formatTimeLeft(ms) {
+            if (ms <= 0) return '0 сек.';
+            
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            
+            const remainingSeconds = seconds % 60;
+            const remainingMinutes = minutes % 60;
+            const remainingHours = hours % 24;
+            
+            if (days > 0) {
+                return `${days} д. ${remainingHours} ч. ${remainingMinutes} мин.`;
+            } else if (hours > 0) {
+                return `${hours} ч. ${remainingMinutes} мин. ${remainingSeconds} сек.`;
+            } else if (minutes > 0) {
+                return `${minutes} мин. ${remainingSeconds} сек.`;
+            } else {
+                return `${remainingSeconds} сек.`;
+            }
+        }
+        
+        function formatShortTimeLeft(ms) {
+            if (ms <= 0) return '0 сек.';
+            
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+            
+            const remainingSeconds = seconds % 60;
+            const remainingMinutes = minutes % 60;
+            const remainingHours = hours % 24;
+            
+            if (days > 0) {
+                return `${days}д ${remainingHours}ч`;
+            } else if (hours > 0) {
+                return `${hours}ч ${remainingMinutes}м`;
+            } else if (minutes > 0) {
+                return `${minutes}м ${remainingSeconds}с`;
+            } else {
+                return `${remainingSeconds}с`;
+            }
+        }
+
+        // Обновление таймера
+        function updateTimer() {
+            if (!expireTimestamp || expireTimestamp <= 0) return;
+            
+            const now = Date.now();
+            const timeLeft = expireTimestamp - now;
+            
+            const countdownElement = document.getElementById('countdown');
+            const daysLeftElement = document.getElementById('daysLeft');
+            const copyBtn = document.getElementById('copyBtn');
+            const warningMessage = document.getElementById('warningMessage');
+            
+            if (timeLeft <= 0) {
+                // Подписка истекла
+                if (countdownElement) countdownElement.innerText = '0 сек.';
+                if (daysLeftElement) daysLeftElement.innerText = '0 сек.';
+                copyBtn.classList.add('disabled');
+                copyBtn.disabled = true;
+                copyBtn.innerHTML = '🔒 Подписка истекла';
+                warningMessage.style.display = 'block';
+                
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+            } else {
+                // Подписка активна
+                const formattedTime = formatTimeLeft(timeLeft);
+                const shortTime = formatShortTimeLeft(timeLeft);
+                if (countdownElement) countdownElement.innerText = shortTime;
+                if (daysLeftElement) daysLeftElement.innerText = formattedTime;
+                
+                // Убеждаемся что кнопка активна
+                copyBtn.classList.remove('disabled');
+                copyBtn.disabled = false;
+                copyBtn.innerHTML = '📋 Скопировать конфиг';
+                warningMessage.style.display = 'none';
+            }
+        }
 
         if (configData) {
             try {
-                // Правильная декодировка для русских букв
+                // Декодируем данные
                 const base64 = decodeURIComponent(configData);
                 const jsonString = decodeURIComponent(escape(atob(base64)));
                 const data = JSON.parse(jsonString);
                 configsText = data.configs;
                 document.getElementById('expireDate').innerText = data.expireDate || '--';
-                document.getElementById('daysLeft').innerText = data.daysLeft || '--';
                 document.getElementById('updateTime').innerText = data.updateTime || '--';
                 
-                // Извлекаем количество дней из строки
-                const daysLeftStr = data.daysLeft || '0 дн.';
-                daysLeftValue = parseInt(daysLeftStr);
+                // Парсим дату окончания подписки
+                if (data.expireDate && data.expireDate !== '--') {
+                    expireTimestamp = new Date(data.expireDate).getTime();
+                    
+                    // Запускаем таймер
+                    updateTimer();
+                    timerInterval = setInterval(updateTimer, 1000);
+                }
                 
                 console.log('Данные загружены:', data);
-                console.log('Дней осталось:', daysLeftValue);
+                console.log('expireTimestamp:', expireTimestamp);
             } catch(e) {
                 console.error('Ошибка парсинга:', e);
                 document.getElementById('expireDate').innerText = 'Ошибка загрузки';
@@ -311,29 +410,10 @@
         const toast = document.getElementById('toast');
         const warningMessage = document.getElementById('warningMessage');
 
-        // Проверяем подписку
-        function isSubscriptionActive() {
-            return daysLeftValue > 0;
-        }
-
-        // Обновляем состояние кнопки
-        function updateButtonState() {
-            if (!isSubscriptionActive()) {
-                copyBtn.classList.add('disabled');
-                copyBtn.disabled = true;
-                warningMessage.style.display = 'block';
-                copyBtn.innerHTML = '🔒 Подписка истекла';
-            } else {
-                copyBtn.classList.remove('disabled');
-                copyBtn.disabled = false;
-                warningMessage.style.display = 'none';
-                copyBtn.innerHTML = '📋 Скопировать конфиг';
-            }
-        }
-
         // Копирование в буфер обмена
         copyBtn.addEventListener('click', async () => {
-            if (!isSubscriptionActive()) {
+            // Проверяем активность подписки
+            if (expireTimestamp && Date.now() > expireTimestamp) {
                 toast.innerText = '❌ Подписка истекла! Продлите её в боте';
                 toast.classList.add('show');
                 setTimeout(() => {
@@ -359,7 +439,6 @@
                     toast.classList.remove('show');
                 }, 2000);
             } catch (err) {
-                // fallback для старых браузеров
                 const textarea = document.createElement('textarea');
                 textarea.value = configsText;
                 document.body.appendChild(textarea);
@@ -373,9 +452,6 @@
                 }, 2000);
             }
         });
-
-        // Применяем состояние кнопки при загрузке
-        updateButtonState();
     </script>
 </body>
 </html>
