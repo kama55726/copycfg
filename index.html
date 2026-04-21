@@ -99,6 +99,28 @@
             transform: scale(0.97);
         }
 
+        .copy-btn.disabled {
+            background: linear-gradient(135deg, #6c757d, #495057);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .copy-btn.disabled:active {
+            transform: none;
+        }
+
+        .warning-message {
+            background: rgba(220, 53, 69, 0.2);
+            border: 1px solid rgba(220, 53, 69, 0.5);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #ff6b6b;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
         .toast {
             background: #10b981;
             color: white;
@@ -208,6 +230,10 @@
             </div>
         </div>
 
+        <div id="warningMessage" class="warning-message" style="display: none;">
+            ⚠️ Ваша подписка истекла! Пожалуйста, продлите подписку в боте.
+        </div>
+
         <div class="toast" id="toast">✅ Конфиги скопированы!</div>
 
         <button class="copy-btn" id="copyBtn">
@@ -253,29 +279,83 @@
         // Получаем параметры из URL
         const urlParams = new URLSearchParams(window.location.search);
         const configData = urlParams.get('data');
-        
+
         let configsText = '';
-        
+        let daysLeftValue = 0;
+
         if (configData) {
             try {
-                const decoded = atob(decodeURIComponent(configData));
-                const data = JSON.parse(decoded);
+                // Декодируем данные
+                const base64 = decodeURIComponent(configData);
+                const jsonString = atob(base64);
+                const data = JSON.parse(jsonString);
                 configsText = data.configs;
                 document.getElementById('expireDate').innerText = data.expireDate || '--';
                 document.getElementById('daysLeft').innerText = data.daysLeft || '--';
                 document.getElementById('updateTime').innerText = data.updateTime || '--';
+                
+                // Извлекаем количество дней из строки
+                const daysLeftStr = data.daysLeft || '0 дн.';
+                daysLeftValue = parseInt(daysLeftStr);
+                
+                console.log('Данные загружены:', data);
+                console.log('Дней осталось:', daysLeftValue);
             } catch(e) {
-                console.error('Ошибка парсинга');
+                console.error('Ошибка парсинга:', e);
+                document.getElementById('expireDate').innerText = 'Ошибка загрузки';
             }
         }
-        
+
         // Кнопка копирования
         const copyBtn = document.getElementById('copyBtn');
         const toast = document.getElementById('toast');
-        
+        const warningMessage = document.getElementById('warningMessage');
+
+        // Проверяем подписку
+        function isSubscriptionActive() {
+            return daysLeftValue > 0;
+        }
+
+        // Обновляем состояние кнопки
+        function updateButtonState() {
+            if (!isSubscriptionActive()) {
+                copyBtn.classList.add('disabled');
+                copyBtn.disabled = true;
+                warningMessage.style.display = 'block';
+                
+                // Меняем текст кнопки
+                copyBtn.innerHTML = '🔒 Подписка истекла';
+            } else {
+                copyBtn.classList.remove('disabled');
+                copyBtn.disabled = false;
+                warningMessage.style.display = 'none';
+                copyBtn.innerHTML = '📋 Скопировать конфиг';
+            }
+        }
+
+        // Копирование в буфер обмена
         copyBtn.addEventListener('click', async () => {
+            if (!isSubscriptionActive()) {
+                toast.innerText = '❌ Подписка истекла! Продлите её в боте';
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+                return;
+            }
+            
+            if (!configsText || configsText.length === 0) {
+                toast.innerText = '❌ Нет конфигов для копирования';
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 2000);
+                return;
+            }
+            
             try {
                 await navigator.clipboard.writeText(configsText);
+                toast.innerText = '✅ Конфиги скопированы!';
                 toast.classList.add('show');
                 setTimeout(() => {
                     toast.classList.remove('show');
@@ -288,12 +368,16 @@
                 textarea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
+                toast.innerText = '✅ Конфиги скопированы!';
                 toast.classList.add('show');
                 setTimeout(() => {
                     toast.classList.remove('show');
                 }, 2000);
             }
         });
+
+        // Применяем состояние кнопки при загрузке
+        updateButtonState();
     </script>
 </body>
 </html>
