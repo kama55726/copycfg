@@ -212,6 +212,16 @@
             font-weight: 700;
             color: #fbbf24;
         }
+        
+        .debug-info {
+            background: rgba(0,0,0,0.5);
+            border-radius: 8px;
+            padding: 8px;
+            margin-top: 10px;
+            font-size: 10px;
+            color: #888;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -229,7 +239,7 @@
             </div>
             <div class="info-row">
                 <span class="info-label">⏰ Осталось:</span>
-                <span class="info-value" id="daysLeft"><span class="countdown" id="countdown">--</span></span>
+                <span class="info-value" id="daysLeft">--</span>
             </div>
             <div class="info-row">
                 <span class="info-label">🕐 Обновлено:</span>
@@ -280,178 +290,265 @@
         <div class="footer">
             Komary VPN — свободный интернет
         </div>
+        
+        <div class="debug-info" id="debugInfo" style="display: none;"></div>
     </div>
 
     <script>
-        // Получаем параметры из URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const configData = urlParams.get('data');
-
-        let configsText = '';
-        let expireTimestamp = 0;
-        let timerInterval = null;
-
-        // Форматирование времени
-        function formatTimeLeft(ms) {
-            if (ms <= 0) return '0 сек.';
+        (function() {
+            console.log('🔧 Скрипт загружен');
             
-            const seconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
+            // Получаем параметры из URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const configData = urlParams.get('data');
             
-            const remainingSeconds = seconds % 60;
-            const remainingMinutes = minutes % 60;
-            const remainingHours = hours % 24;
+            console.log('📦 configData из URL:', configData ? 'есть' : 'нет');
             
-            if (days > 0) {
-                return `${days} д. ${remainingHours} ч. ${remainingMinutes} мин.`;
-            } else if (hours > 0) {
-                return `${hours} ч. ${remainingMinutes} мин. ${remainingSeconds} сек.`;
-            } else if (minutes > 0) {
-                return `${minutes} мин. ${remainingSeconds} сек.`;
-            } else {
-                return `${remainingSeconds} сек.`;
-            }
-        }
-        
-        function formatShortTimeLeft(ms) {
-            if (ms <= 0) return '0 сек.';
+            let configsText = '';
+            let expireTimestamp = 0;
+            let timerInterval = null;
+            let isExpired = false;
             
-            const seconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
-            
-            const remainingSeconds = seconds % 60;
-            const remainingMinutes = minutes % 60;
-            const remainingHours = hours % 24;
-            
-            if (days > 0) {
-                return `${days}д ${remainingHours}ч`;
-            } else if (hours > 0) {
-                return `${hours}ч ${remainingMinutes}м`;
-            } else if (minutes > 0) {
-                return `${minutes}м ${remainingSeconds}с`;
-            } else {
-                return `${remainingSeconds}с`;
-            }
-        }
-
-        // Обновление таймера
-        function updateTimer() {
-            if (!expireTimestamp || expireTimestamp <= 0) return;
-            
-            const now = Date.now();
-            const timeLeft = expireTimestamp - now;
-            
-            const countdownElement = document.getElementById('countdown');
-            const daysLeftElement = document.getElementById('daysLeft');
-            const copyBtn = document.getElementById('copyBtn');
-            const warningMessage = document.getElementById('warningMessage');
-            
-            if (timeLeft <= 0) {
-                // Подписка истекла
-                if (countdownElement) countdownElement.innerText = '0 сек.';
-                if (daysLeftElement) daysLeftElement.innerText = '0 сек.';
-                copyBtn.classList.add('disabled');
-                copyBtn.disabled = true;
-                copyBtn.innerHTML = '🔒 Подписка истекла';
-                warningMessage.style.display = 'block';
+            // Функция для парсинга timestamp из разных форматов
+            function parseExpireTimestamp(value) {
+                if (!value) return 0;
                 
-                if (timerInterval) {
-                    clearInterval(timerInterval);
-                    timerInterval = null;
+                // Если это число
+                if (typeof value === 'number') return value;
+                
+                // Если это строка с числом
+                if (typeof value === 'string') {
+                    const num = parseInt(value);
+                    if (!isNaN(num)) return num;
                 }
-            } else {
-                // Подписка активна
-                const formattedTime = formatTimeLeft(timeLeft);
-                const shortTime = formatShortTimeLeft(timeLeft);
-                if (countdownElement) countdownElement.innerText = shortTime;
-                if (daysLeftElement) daysLeftElement.innerText = formattedTime;
                 
-                // Убеждаемся что кнопка активна
-                copyBtn.classList.remove('disabled');
-                copyBtn.disabled = false;
-                copyBtn.innerHTML = '📋 Скопировать конфиг';
-                warningMessage.style.display = 'none';
+                // Если это строка с датой
+                if (typeof value === 'string') {
+                    const date = new Date(value);
+                    if (!isNaN(date.getTime())) return date.getTime();
+                }
+                
+                return 0;
             }
-        }
-
-        if (configData) {
-            try {
-                // Декодируем данные
-                const base64 = decodeURIComponent(configData);
-                const jsonString = decodeURIComponent(escape(atob(base64)));
-                const data = JSON.parse(jsonString);
-                configsText = data.configs;
-                document.getElementById('expireDate').innerText = data.expireDate || '--';
-                document.getElementById('updateTime').innerText = data.updateTime || '--';
+            
+            // Форматирование времени
+            function formatTimeLeft(ms) {
+                if (ms <= 0) return '0 сек.';
                 
-                // Парсим дату окончания подписки
-                if (data.expireDate && data.expireDate !== '--') {
-                    expireTimestamp = new Date(data.expireDate).getTime();
+                const seconds = Math.floor(ms / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+                
+                const remainingSeconds = seconds % 60;
+                const remainingMinutes = minutes % 60;
+                const remainingHours = hours % 24;
+                
+                if (days > 0) {
+                    return `${days} д. ${remainingHours} ч. ${remainingMinutes} мин.`;
+                } else if (hours > 0) {
+                    return `${hours} ч. ${remainingMinutes} мин. ${remainingSeconds} сек.`;
+                } else if (minutes > 0) {
+                    return `${minutes} мин. ${remainingSeconds} сек.`;
+                } else {
+                    return `${remainingSeconds} сек.`;
+                }
+            }
+            
+            function formatShortTimeLeft(ms) {
+                if (ms <= 0) return '0 сек.';
+                
+                const seconds = Math.floor(ms / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+                
+                const remainingSeconds = seconds % 60;
+                const remainingMinutes = minutes % 60;
+                const remainingHours = hours % 24;
+                
+                if (days > 0) {
+                    return `${days}д ${remainingHours}ч`;
+                } else if (hours > 0) {
+                    return `${hours}ч ${remainingMinutes}м`;
+                } else if (minutes > 0) {
+                    return `${minutes}м ${remainingSeconds}с`;
+                } else {
+                    return `${remainingSeconds}с`;
+                }
+            }
+            
+            // Обновление таймера и состояния кнопки
+            function updateUI() {
+                const now = Date.now();
+                const timeLeft = expireTimestamp - now;
+                const isSubscriptionActive = expireTimestamp > 0 && timeLeft > 0;
+                
+                const countdownElement = document.getElementById('countdown');
+                const daysLeftElement = document.getElementById('daysLeft');
+                const copyBtn = document.getElementById('copyBtn');
+                const warningMessage = document.getElementById('warningMessage');
+                
+                if (!isSubscriptionActive) {
+                    // Подписка неактивна или истекла
+                    if (daysLeftElement) daysLeftElement.innerText = 'Подписка неактивна';
+                    if (copyBtn) {
+                        copyBtn.classList.add('disabled');
+                        copyBtn.disabled = true;
+                        copyBtn.innerHTML = '🔒 Подписка истекла';
+                    }
+                    if (warningMessage) warningMessage.style.display = 'block';
+                    if (timerInterval) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                    }
+                    isExpired = true;
+                } else {
+                    // Подписка активна
+                    const formattedTime = formatTimeLeft(timeLeft);
+                    const shortTime = formatShortTimeLeft(timeLeft);
                     
-                    // Запускаем таймер
-                    updateTimer();
-                    timerInterval = setInterval(updateTimer, 1000);
+                    if (daysLeftElement) daysLeftElement.innerText = formattedTime;
+                    if (copyBtn) {
+                        copyBtn.classList.remove('disabled');
+                        copyBtn.disabled = false;
+                        copyBtn.innerHTML = '📋 Скопировать конфиг';
+                    }
+                    if (warningMessage) warningMessage.style.display = 'none';
+                    isExpired = false;
                 }
-                
-                console.log('Данные загружены:', data);
-                console.log('expireTimestamp:', expireTimestamp);
-            } catch(e) {
-                console.error('Ошибка парсинга:', e);
-                document.getElementById('expireDate').innerText = 'Ошибка загрузки';
-            }
-        }
-
-        // Кнопка копирования
-        const copyBtn = document.getElementById('copyBtn');
-        const toast = document.getElementById('toast');
-        const warningMessage = document.getElementById('warningMessage');
-
-        // Копирование в буфер обмена
-        copyBtn.addEventListener('click', async () => {
-            // Проверяем активность подписки
-            if (expireTimestamp && Date.now() > expireTimestamp) {
-                toast.innerText = '❌ Подписка истекла! Продлите её в боте';
-                toast.classList.add('show');
-                setTimeout(() => {
-                    toast.classList.remove('show');
-                }, 3000);
-                return;
             }
             
-            if (!configsText || configsText.length === 0) {
-                toast.innerText = '❌ Нет конфигов для копирования';
-                toast.classList.add('show');
-                setTimeout(() => {
-                    toast.classList.remove('show');
-                }, 2000);
-                return;
+            // Обработка полученных данных
+            if (configData) {
+                try {
+                    console.log('🔓 Декодируем data...');
+                    // Декодируем URL-encoded строку
+                    const base64 = decodeURIComponent(configData);
+                    console.log('   base64 длина:', base64.length);
+                    
+                    // Декодируем base64
+                    const jsonString = decodeURIComponent(escape(atob(base64)));
+                    console.log('   jsonString:', jsonString.substring(0, 200));
+                    
+                    // Парсим JSON
+                    const data = JSON.parse(jsonString);
+                    console.log('✅ Данные распарсены:', data);
+                    
+                    configsText = data.configs || '';
+                    
+                    // Устанавливаем отображаемые данные
+                    if (data.expireDate) {
+                        document.getElementById('expireDate').innerText = data.expireDate;
+                    }
+                    
+                    if (data.updateTime) {
+                        document.getElementById('updateTime').innerText = data.updateTime;
+                    }
+                    
+                    // КРИТИЧЕСКИ ВАЖНО: парсим expireTimestamp
+                    if (data.expireTimestamp) {
+                        expireTimestamp = parseExpireTimestamp(data.expireTimestamp);
+                        console.log('⏰ expireTimestamp установлен:', expireTimestamp, '=', new Date(expireTimestamp));
+                    } else if (data.expireDate && data.expireDate !== '--') {
+                        // Fallback: пытаемся спарсить из строки
+                        expireTimestamp = new Date(data.expireDate).getTime();
+                        console.log('⏰ expireTimestamp из строки:', expireTimestamp);
+                    }
+                    
+                    // Проверяем валидность timestamp
+                    if (isNaN(expireTimestamp) || expireTimestamp <= 0) {
+                        console.log('⚠️ expireTimestamp невалидный, устанавливаем в 0');
+                        expireTimestamp = 0;
+                    }
+                    
+                    // Обновляем UI и запускаем таймер
+                    updateUI();
+                    
+                    if (expireTimestamp > 0 && expireTimestamp > Date.now()) {
+                        // Запускаем таймер только если подписка активна
+                        if (timerInterval) clearInterval(timerInterval);
+                        timerInterval = setInterval(updateUI, 1000);
+                    }
+                    
+                    // Показываем отладочную информацию (только для тестирования)
+                    const debugInfo = document.getElementById('debugInfo');
+                    if (debugInfo && expireTimestamp === 0) {
+                        debugInfo.style.display = 'block';
+                        debugInfo.innerHTML = `🔍 Отладка: expireTimestamp=${expireTimestamp}, data keys: ${Object.keys(data).join(', ')}`;
+                    }
+                    
+                } catch(e) {
+                    console.error('❌ Ошибка парсинга:', e);
+                    document.getElementById('expireDate').innerText = 'Ошибка загрузки';
+                    const debugInfo = document.getElementById('debugInfo');
+                    if (debugInfo) {
+                        debugInfo.style.display = 'block';
+                        debugInfo.innerHTML = `❌ Ошибка: ${e.message}`;
+                    }
+                }
+            } else {
+                console.log('⚠️ Нет параметра data в URL');
+                document.getElementById('expireDate').innerText = 'Нет данных';
+                const debugInfo = document.getElementById('debugInfo');
+                if (debugInfo) {
+                    debugInfo.style.display = 'block';
+                    debugInfo.innerHTML = '❌ Нет параметра data в URL';
+                }
             }
             
-            try {
-                await navigator.clipboard.writeText(configsText);
-                toast.innerText = '✅ Конфиги скопированы!';
-                toast.classList.add('show');
-                setTimeout(() => {
-                    toast.classList.remove('show');
-                }, 2000);
-            } catch (err) {
-                const textarea = document.createElement('textarea');
-                textarea.value = configsText;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                toast.innerText = '✅ Конфиги скопированы!';
-                toast.classList.add('show');
-                setTimeout(() => {
-                    toast.classList.remove('show');
-                }, 2000);
+            // Кнопка копирования
+            const copyBtn = document.getElementById('copyBtn');
+            const toast = document.getElementById('toast');
+            
+            if (copyBtn) {
+                copyBtn.addEventListener('click', async () => {
+                    // Проверяем активность подписки
+                    const now = Date.now();
+                    const isActive = expireTimestamp > 0 && expireTimestamp > now;
+                    
+                    if (!isActive) {
+                        toast.innerText = '❌ Подписка истекла! Продлите её в боте';
+                        toast.classList.add('show');
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 3000);
+                        return;
+                    }
+                    
+                    if (!configsText || configsText.length === 0) {
+                        toast.innerText = '❌ Нет конфигов для копирования';
+                        toast.classList.add('show');
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 2000);
+                        return;
+                    }
+                    
+                    try {
+                        await navigator.clipboard.writeText(configsText);
+                        toast.innerText = '✅ Конфиги скопированы!';
+                        toast.classList.add('show');
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 2000);
+                    } catch (err) {
+                        // Fallback для старых браузеров
+                        const textarea = document.createElement('textarea');
+                        textarea.value = configsText;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        toast.innerText = '✅ Конфиги скопированы!';
+                        toast.classList.add('show');
+                        setTimeout(() => {
+                            toast.classList.remove('show');
+                        }, 2000);
+                    }
+                });
             }
-        });
+        })();
     </script>
 </body>
 </html>
