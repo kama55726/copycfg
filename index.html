@@ -266,7 +266,7 @@
             </div>
         </div>
 
-        <a href="https://www.happ.su/main/ru" class="happ-btn" id="happBtn">
+        <a href="happ://" class="happ-btn" id="happBtn">
             📱 Открыть Happ
         </a>
 
@@ -285,7 +285,7 @@
 
         if (configData) {
             try {
-                // ПРАВИЛЬНАЯ ДЕКОДИРОВКА ДЛЯ РУССКИХ БУКВ
+                // Правильная декодировка для русских букв
                 const base64 = decodeURIComponent(configData);
                 const jsonString = decodeURIComponent(escape(atob(base64)));
                 const data = JSON.parse(jsonString);
@@ -359,6 +359,7 @@
                     toast.classList.remove('show');
                 }, 2000);
             } catch (err) {
+                // fallback для старых браузеров
                 const textarea = document.createElement('textarea');
                 textarea.value = configsText;
                 document.body.appendChild(textarea);
